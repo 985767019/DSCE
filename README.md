@@ -1,7 +1,7 @@
 # Unsupervised Domain Adaptation for Object Detection
 
 ## Updates
-- *04/2022*: Provide CycleGAN translated datasets.
+- *04/2024*: Provide CycleGAN translated datasets.
 
 
 ## Installation
