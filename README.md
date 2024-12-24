@@ -24,11 +24,39 @@ The basic training pipeline is as follows.
 
 The following command trains a Faster-RCNN detector on task VOC->Clipart, with only source (VOC) data.
 ```
+# Source_only Stage
 CUDA_VISIBLE_DEVICES=0 python source_only.py \
   --config-file config/faster_rcnn_R_101_C4_voc.yaml \
   -s VOC2007 datasets/VOC2007 VOC2012 datasets/VOC2012 -t Clipart datasets/clipart \
   --test VOC2007Test datasets/VOC2007 Clipart datasets/clipart --finetune \
   OUTPUT_DIR logs/source_only/faster_rcnn_R_101_C4/voc2clipart
+
+# ResNet101 Based Faster RCNN: Faster RCNN: VOC->Clipart
+# 44.8 -> 47.6(47.1,47.5)
+pretrained_models=../logs/source_only/faster_rcnn_R_101_C4/voc2clipart_trans/model_0017999.pth
+CUDA_VISIBLE_DEVICES=1 python d_adapt.py  \
+  --config-file config/faster_rcnn_R_101_C4_voc.yaml \
+  -s VOC2007 ../datasets/VOC2007 VOC2012 ../datasets/VOC2012  \
+  -t Clipart ../datasets/clipart --test Clipart ../datasets/clipart \
+  --finetune --bbox-refine  \
+  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase1_swbest_dsce \
+  MODEL.WEIGHTS ${pretrained_models} SEED 0
+
+pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase1_swbest_dsce/model_0003999.pth
+ CUDA_VISIBLE_DEVICES=1 python d_adapt.py --confidence-ratio-c 0.1 \
+  --config-file config/faster_rcnn_R_101_C4_voc.yaml \
+  -s VOC2007 ../datasets/VOC2007 VOC2012 ../datasets/VOC2012  \
+  -t Clipart ../datasets/clipart --test Clipart ../datasets/clipart \
+  --finetune --bbox-refine \
+  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase2_swbest_dsce MODEL.WEIGHTS ${pretrained_models} SEED 0
+
+pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase2_swbest_dsce1/model_0003999.pth
+CUDA_VISIBLE_DEVICES=0 python d_adapt.py --confidence-ratio-c 0.2 \
+  --config-file config/faster_rcnn_R_101_C4_voc.yaml \
+  -s VOC2007 ../datasets/VOC2007 VOC2012 ../datasets/VOC2012  \
+  -t Clipart ../datasets/clipart --test Clipart ../datasets/clipart \
+  --finetune --bbox-refine \
+  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase3_swbest_dsce MODEL.WEIGHTS ${pretrained_models} SEED 0
 ```
 Explanation of some arguments
 - `--config-file`: path to config file that specifies training hyper-parameters.
