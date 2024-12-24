@@ -39,24 +39,24 @@ CUDA_VISIBLE_DEVICES=1 python d_adapt.py  \
   -s VOC2007 ../datasets/VOC2007 VOC2012 ../datasets/VOC2012  \
   -t Clipart ../datasets/clipart --test Clipart ../datasets/clipart \
   --finetune --bbox-refine  \
-  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase1_swbest_dsce \
+  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase1_swda_dsce \
   MODEL.WEIGHTS ${pretrained_models} SEED 0
 
-pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase1_swbest_dsce/model_0003999.pth
+pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase1_swda_dsce/model_0003999.pth
  CUDA_VISIBLE_DEVICES=1 python d_adapt.py --confidence-ratio-c 0.1 \
   --config-file config/faster_rcnn_R_101_C4_voc.yaml \
   -s VOC2007 ../datasets/VOC2007 VOC2012 ../datasets/VOC2012  \
   -t Clipart ../datasets/clipart --test Clipart ../datasets/clipart \
   --finetune --bbox-refine \
-  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase2_swbest_dsce MODEL.WEIGHTS ${pretrained_models} SEED 0
+  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase2_swda_dsce MODEL.WEIGHTS ${pretrained_models} SEED 0
 
-pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase2_swbest_dsce1/model_0003999.pth
+pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase2_swda_dsce/model_0003999.pth
 CUDA_VISIBLE_DEVICES=0 python d_adapt.py --confidence-ratio-c 0.2 \
   --config-file config/faster_rcnn_R_101_C4_voc.yaml \
   -s VOC2007 ../datasets/VOC2007 VOC2012 ../datasets/VOC2012  \
   -t Clipart ../datasets/clipart --test Clipart ../datasets/clipart \
   --finetune --bbox-refine \
-  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase3_swbest_dsce MODEL.WEIGHTS ${pretrained_models} SEED 0
+  OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/phase3_swda_dsce MODEL.WEIGHTS ${pretrained_models} SEED 0
 ```
 Explanation of some arguments
 - `--config-file`: path to config file that specifies training hyper-parameters.
