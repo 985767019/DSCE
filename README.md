@@ -17,7 +17,6 @@ address this, we applied data augmentation with varying intensities before the c
  pseudo-label self-training phase, we made adjustments to the loss function. For detailed information, please refer to the paper "Unsupervised
  Cross-Domain Object Detection based on Dynamic Smooth Cross Entropy."
 
-```
 ## Experiment and Results
 
 The shell files give the script to reproduce the [benchmarks](/docs/dalib/benchmarks/object_detection.rst) with specified hyper-parameters.
