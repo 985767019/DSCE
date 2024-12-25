@@ -20,248 +20,6 @@ except ImportError:
     skm = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-class RefixLoss(nn.Module):
-    '''
-    Adapted from https://github.com/CoinCheung/pytorch-loss
-    '''
-
-    def __init__(self, lb_smooth=0.1, reduction='mean', ignore_index=-1):
-        super(RefixLoss, self).__init__()
-        self.lb_smooth = lb_smooth
-        self.reduction = reduction
-        self.lb_ignore = ignore_index
-        self.log_softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, target):
-        logits = input.float()  # use fp32 to avoid nan
-        with torch.no_grad():
-            num_classes = logits.size(1)
-            label = target.clone().detach()
-            ignore = label.eq(self.lb_ignore)
-            n_valid = ignore.eq(0).sum()
-            label[ignore] = 0
-            lb_pos, lb_neg = 1. - self.lb_smooth, self.lb_smooth / num_classes
-            lb_smooth_one_hot = torch.empty_like(logits).fill_(lb_neg)\
-                .scatter_(1, label.unsqueeze(1), lb_pos).detach()
-            lb_one_hot = torch.empty_like(logits).fill_(0)\
-                .scatter_(1, label.unsqueeze(1), 1).detach()
-
-        logs = self.log_softmax(logits)
-        probs = F.softmax(logits, dim=1)
-        # 每个样本的最大预测概率与对应的索引
-        max_probs_per_sample, max_idx_per_sample = torch.max(probs, dim=-1)
-
-        # 获取高置信度最小阈值和低置信度最大阈值
-        high_threshold, low_threshold = self.gmm_three_policy(max_probs_per_sample)
-
-        # 创建置信度掩码
-        # 47.8
-        high_confidence_mask = max_probs_per_sample > high_threshold
-        # medium_confidence_mask = (max_probs_per_sample >= low_threshold) & (max_probs_per_sample <= high_threshold)
-        # low_confidence_mask = max_probs_per_sample < low_threshold
-        medium_confidence_mask = max_probs_per_sample <= high_threshold
-
-        high_weights = self.get_weight(logits, high_confidence_mask)
-        # low_weights = self.get_weight(logits, low_confidence_mask)
-        # print("high_weights: ", high_weights)
-        # medium_weight = self.get_weight(logits, medium_confidence_mask)
-        # print("low_weights: ", low_weights)
-
-        # 初始化损失
-        loss = torch.zeros_like(max_probs_per_sample)
-        # 计算高置信度样本的交叉熵损失
-        high_confidence_loss = -torch.sum(logs[high_confidence_mask] * lb_one_hot[high_confidence_mask], dim=1)
-        # 将高置信度样本的损失赋值给对应位置
-        loss[high_confidence_mask] = high_confidence_loss * high_weights
-        # 计算中置信度样本的余弦相似度损失
-        medium_confidence_loss = -torch.sum(logs[medium_confidence_mask] *
-                                            lb_smooth_one_hot[medium_confidence_mask], dim=1)
-        # 将中置信度样本的损失赋值给对应位置
-        loss[medium_confidence_mask] = medium_confidence_loss
-        # 计算低置信度样本的交叉熵损失
-        # low_confidence_loss = -torch.sum(logs[low_confidence_mask] *
-        #                                  lb_one_hot[low_confidence_mask], dim=1)
-        # 计算低置信度样本的KL散度损失
-        # low_confidence_loss = F.kl_div(logs[low_confidence_mask], lb_one_hot[low_confidence_mask],
-        #                                reduction='none').sum(dim=1)
-        # # 将低置信度样本的损失赋值给对应位置
-        # loss[low_confidence_mask] = low_confidence_loss * low_weights
-        # 将忽略位置的损失置为0
-        loss[ignore] = 0
-        # 如果降维方式reduction为'mean'，则计算平均损失
-        if self.reduction == 'mean':
-            loss = loss.sum() / n_valid
-        # 如果降维方式reduction为'sum'，则将损失值求和
-        if self.reduction == 'sum':
-            loss = loss.sum()
-
-        return loss
-
-    def get_weight(self, logits, relevant_mask, epsilon=1e-6):
-        relevant_logits = logits[relevant_mask]
-        relevant_probs = F.softmax(relevant_logits, dim=1)
-        # 取出每个样本的最大概率值和对应的索引
-        max_probs_per_sample, max_idx_per_sample = torch.max(relevant_probs, dim=1)
-        mean = torch.mean(max_probs_per_sample)
-        var = torch.var(max_probs_per_sample, unbiased=False)
-        weight = torch.ones_like(relevant_probs)
-        lambda_max = 1.0
-        weight = lambda_max * torch.exp(
-            -((max_probs_per_sample - mean) ** 2) / (2 * var + epsilon))
-
-        return weight
-
-
-    def gmm_three_policy(self, scores):
-        # 首先处理Tensor，确保它在CPU上，并且转换为numpy数组
-        if isinstance(scores, torch.Tensor):
-            if scores.requires_grad:
-                scores = scores.detach()
-            if scores.is_cuda:
-                scores = scores.cpu()
-            scores = scores.numpy()
-
-        # 移除异常值
-        # q25, q75 = np.percentile(scores, [25, 75])
-        # cut_off = iqr(scores)
-        # lower_bound, upper_bound = q25 - cut_off, q75 + cut_off
-        # scores_clean = scores[(scores > lower_bound) & (scores < upper_bound)]
-        # z_scores = stats.zscore(scores)
-        # lower_bound, upper_bound = -3, 3  # 标准Z-score界限
-        # scores_clean = scores[(z_scores > lower_bound) & (z_scores < upper_bound)]
-        scores_clean = scores
-
-        # 如果处理后的数据仍不足以进行GMM拟合，使用中位数作为阈值
-        if len(scores_clean) < 4:
-            median = np.percentile(scores_clean, 50)
-            return median, median
-
-        # 为GMM拟合准备数据
-        scores_clean = scores_clean.reshape(-1, 1)
-        # Initialize GMM with three components using more robust statistics
-        median = np.median(scores_clean)
-        means_init = [[np.min(scores_clean)], [median], [np.max(scores_clean)]]
-        weights_init = [1 / 3] * 3  # Equal weights for three components
-        precisions_init = [[[1.0]], [[1.0]], [[1.0]]]
-        gmm = skm.GaussianMixture(
-            n_components=3,
-            weights_init=weights_init,
-            means_init=means_init,
-            precisions_init=precisions_init
-        )
-        gmm.fit(scores_clean)
-        gmm_assignment = gmm.predict(scores_clean)
-
-        # Calculate thresholds based on GMM results
-        min_positive = np.min(scores_clean[gmm_assignment == 2]) if (gmm_assignment == 2).any() else np.inf
-        max_negative = np.max(scores_clean[gmm_assignment == 0]) if (gmm_assignment == 0).any() else -np.inf
-
-        # Ensure that high threshold is actually higher than the low threshold
-        high_thr = max(min_positive, median)  # Use median as a fallback
-        low_thr = min(max_negative, median)  # Use median as a fallback
-
-        if low_thr > high_thr:
-            high_thr, low_thr = low_thr, high_thr  # Swap if necessary
-
-        return high_thr, low_thr
-
-
-    # def gmm_three_policy(self, scores):
-    #     if len(scores) < 4:
-    #         return np.percentile(scores, 50), np.percentile(scores, 50)  # Use median if insufficient data
-    #     if isinstance(scores, torch.Tensor):
-    #         scores = scores.detach().cpu().numpy()
-    #     if len(scores.shape) == 1:
-    #         scores = scores[:, np.newaxis]
-    #
-    #     # Initialize GMM with three components using more robust statistics
-    #     median = np.median(scores)
-    #     means_init = [[np.min(scores)], [median], [np.max(scores)]]
-    #     weights_init = [1 / 3] * 3  # Equal weights for three components
-    #     precisions_init = [[[1.0]], [[1.0]], [[1.0]]]
-    #     gmm = skm.GaussianMixture(
-    #         n_components=3,
-    #         weights_init=weights_init,
-    #         means_init=means_init,
-    #         precisions_init=precisions_init
-    #     )
-    #     gmm.fit(scores)
-    #     gmm_assignment = gmm.predict(scores)
-    #
-    #     # Calculate thresholds based on GMM results
-    #     min_positive = np.min(scores[gmm_assignment == 2]) if (gmm_assignment == 2).any() else np.inf
-    #     max_negative = np.max(scores[gmm_assignment == 0]) if (gmm_assignment == 0).any() else -np.inf
-    #
-    #     # Ensure that high threshold is actually higher than the low threshold
-    #     high_thr = max(min_positive, median)  # Use median as a fallback
-    #     low_thr = min(max_negative, median)  # Use median as a fallback
-    #
-    #     if low_thr > high_thr:
-    #         high_thr, low_thr = low_thr, high_thr  # Swap if necessary
-    #
-    #     return high_thr, low_thr
-
-
-    def gmm_policy(self, scores, given_gt_thr=0.2, policy='high'):
-        """The policy of choosing pseudo label.
-
-        The previous GMM-B policy is used as default.
-        1. Use the predicted bbox to fit a GMM with 2 center.
-        2. Find the predicted bbox belonging to the positive
-            cluster with highest GMM probability.
-        3. Take the class score of the finded bbox as gt_thr.
-
-        Args:
-            scores (nd.array): The scores.
-
-        Returns:
-            float: Found gt_thr.
-
-        """
-        if len(scores) < 4:
-            return given_gt_thr
-        if isinstance(scores, torch.Tensor):
-            scores = scores.detach().cpu().numpy()
-        if len(scores.shape) == 1:
-            scores = scores[:, np.newaxis]
-        means_init = [[np.min(scores)], [np.max(scores)]]
-        # q1, q3 = np.percentile(scores, [25, 75])
-        # means_init = [[q1], [q3]]
-        weights_init = [1 / 2, 1 / 2]
-        precisions_init = [[[1.0]], [[1.0]]]
-        gmm = skm.GaussianMixture(
-            2,
-            weights_init=weights_init,
-            means_init=means_init,
-            precisions_init=precisions_init)
-        gmm.fit(scores)
-        gmm_assignment = gmm.predict(scores)
-        gmm_scores = gmm.score_samples(scores)
-        assert policy in ['middle', 'high']
-        if policy == 'high':
-            if (gmm_assignment == 1).any():
-                gmm_scores[gmm_assignment == 0] = -np.inf
-                indx = np.argmax(gmm_scores, axis=0)
-                pos_indx = (gmm_assignment == 1) & (scores >= scores[indx]).squeeze()
-                # print("正样本的所有分数值:", scores[pos_indx])  # 打印正样本的所有分数值
-                # pos_thr = scores[pos_indx].mean()  # 使用平均值代替最小值
-                pos_thr = float(scores[pos_indx].min())
-                # pos_thr = max(given_gt_thr, pos_thr)  # 你可以选择是否使用这行代码来保证阈值不低于给定的阈值
-            else:
-                pos_thr = given_gt_thr
-
-        elif policy == 'middle':
-            # For modified middle policy, calculate the average score of the most likely negative bbox
-            if (gmm_assignment == 0).any():
-                neg_scores = scores[gmm_assignment == 0]
-                pos_thr = float(np.mean(neg_scores))
-            else:
-                pos_thr = given_gt_thr
-
-        return pos_thr
-
-
 class DynamicLabelSmoothSoftmaxCEV2(nn.Module):
     def __init__(self, lb_smooth=0.1, reduction='mean', ignore_index=-1):
         super(DynamicLabelSmoothSoftmaxCEV2, self).__init__()
@@ -336,60 +94,32 @@ class DynamicLabelSmoothSoftmaxCEV2(nn.Module):
 
 # version 1: use torch.autograd
 class DynamicLabelSmoothSoftmaxCEV1(nn.Module):
-    '''
-    Adapted from https://github.com/CoinCheung/pytorch-loss
-    '''
-
     def __init__(self, lb_smooth=0.1, reduction='mean', ignore_index=-1):
         super(DynamicLabelSmoothSoftmaxCEV1, self).__init__()
         self.lb_smooth = lb_smooth
         self.reduction = reduction
         self.lb_ignore = ignore_index
-        # LogSoftmax其实就是对softmax的结果进行log，即Log(Softmax(x))
-        # dim=1：对每一行的所有元素进行softmax运算，并使得每一行所有元素和为1
         self.log_softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, input, target):
-        # overcome ignored label
-        # 将输入转换为float类型，以避免产生NaN值
-        logits = input.float()  # use fp32 to avoid nan
-        # 使用torch.no_grad()上下文管理器，禁止对计算梯度的操作进行跟踪
+    def forward(self, input, target):   
+        logits = input.float()  # use fp32 to avoid nan    
         with torch.no_grad():
             num_classes = logits.size(1)
-            label = target.clone().detach()
-            # 通过比较目标标签和要忽略的索引，得到一个布尔张量ignore，表示哪些位置应该被忽略。bool
-            ignore = label.eq(self.lb_ignore)
-            # 计算非忽略位置的数量n_valid
-            n_valid = ignore.eq(0).sum()
-            # 将目标标签中的忽略位置设置为0
+            label = target.clone().detach()  
+            ignore = label.eq(self.lb_ignore)      
+            n_valid = ignore.eq(0).sum()         
             label[ignore] = 0
-            # 根据平滑因子和类别数量，计算平滑后的标签分布，lb_pos表示非忽略位置的标签权重，lb_neg表示忽略位置的标签权重
             lb_pos, lb_neg = 1. - self.lb_smooth, self.lb_smooth / num_classes
-            # torch.empty_like(logits)：创建一个与logits具有相同形状的空张量;
-            # fill_(lb_neg)：使用lb_neg的值填充整个张量。fill_()是一个原地操作，将张量的所有元素都设置为相同的值lb_neg
-            # detach()：将张量从计算图中分离出来，返回一个新的张量;
-            # scatter_(1, label.unsqueeze(1), lb_pos)：使用平滑后的标签分布lb_pos，根据label的值在第1维进行索引填充;
-            # label.unsqueeze(1)将label张量的形状从 (batch_size,) 转换为 (batch_size, 1)，以适应scatter_()的要求
-            # 1表示在第1维（列维度）上进行索引填充; lb_pos是要填充的值，非忽略位置的标签权重
             lb_one_hot = torch.empty_like(logits).fill_(lb_neg)\
                 .scatter_(1, label.unsqueeze(1), lb_pos).detach()
-
-        # 计算交叉熵损失部分
-        # 对logits进行log softmax操作，得到每个类别的概率分布
+   
         logs = self.log_softmax(logits)
         dynamic_weight = self.get_weight(input)
-        # 计算交叉熵损失，将log softmax的输出和平滑的one-hot标签分布相乘，然后在第1维上求和
         loss = -torch.sum(logs * lb_one_hot, dim=1)
-
-        # 动态权重应用到整体损失上
         loss = loss * dynamic_weight
-
-        # 将忽略位置的损失置为0，以确保在计算损失时不会被考虑
         loss[ignore] = 0
-        # 如果降维方式reduction为'mean'，则计算平均损失，即将损失值求和并除以有效样本数n_valid
         if self.reduction == 'mean':
             loss = loss.sum() / n_valid
-        # 如果降维方式reduction为'sum'，则将损失值求和，即不除以有效样本数
         if self.reduction == 'sum':
             loss = loss.sum()
 
@@ -401,12 +131,9 @@ class DynamicLabelSmoothSoftmaxCEV1(nn.Module):
         x = 1e-6
         logits = input.float()
         probs_logits = F.softmax(logits, dim=1)
-        # tensor(N, )每个样本最大预测概率值以及对应的类别索引0-C
         max_pred_b, max_idx_b = torch.max(probs_logits, dim=1)
-        # tensor(C, )每个类别最大预测概率值以及对应的样本索引0-N
         max_pred_c, max_idx_c = torch.max(probs_logits, dim=0)
         u_t = torch.mean(max_pred_c, dim=0)
-        # 创建一个和 max_pred_b 形状相同的张量，所有元素都是 u_t 的值
         u_t_tensor = torch.full_like(max_pred_b, u_t.item())
         diff_squared = (max_pred_c - u_t) ** 2
         variance_t = torch.mean(diff_squared, dim=0)
