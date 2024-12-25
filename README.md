@@ -19,9 +19,6 @@ address this, we applied data augmentation with varying intensities before the c
 
 ## Experiment and Results
 
-The shell files give the script to reproduce the [benchmarks](/docs/dalib/benchmarks/object_detection.rst) with specified hyper-parameters.
-The basic training pipeline is as follows.
-
 The following command trains a Faster-RCNN detector on task VOC->Clipart, with only source (VOC) data.
 ```
 # Source_only Stage
