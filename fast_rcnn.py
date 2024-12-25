@@ -1,8 +1,3 @@
-"""
-@author: Junguang Jiang
-@contact: JiangJunguang1123@outlook.com
-"""
-
 from detectron2.layers import cat
 from detectron2.modeling.roi_heads.fast_rcnn import (
     _log_classification_stats,
