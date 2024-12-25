@@ -1,8 +1,3 @@
-"""
-Training a category adaptor
-@author: Junguang Jiang
-@contact: JiangJunguang1123@outlook.com
-"""
 import logging
 import os
 import random
