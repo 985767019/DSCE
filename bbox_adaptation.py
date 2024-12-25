@@ -1,9 +1,3 @@
-"""
-Training a bounding box adaptor
-@author: Junguang Jiang
-@contact: JiangJunguang1123@outlook.com
-"""
-
 import math
 import random
 import time
