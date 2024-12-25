@@ -1,8 +1,3 @@
-"""
-`D-adapt: Decoupled Adaptation for Cross-Domain Object Detection <https://openreview.net/pdf?id=VNqaB1g9393>`_.
-@author: Junguang Jiang
-@contact: JiangJunguang1123@outlook.com
-"""
 import logging
 import os
 
