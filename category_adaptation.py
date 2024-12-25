@@ -292,9 +292,7 @@ class CategoryAdaptor:
         # finally voc2clipart
         strong_transform = T.Compose([
             ResizeImage(self.args.resize_size),
-            # 随机颜色抖动，增强颜色变化
             T.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.3),
-            # 随机应用高斯模糊，模拟不同焦距
             # T.RandomApply([T.GaussianBlur([3, 5], (0.1, 2.0))], p=0.7), # 3
             # T.RandomApply([T.GaussianBlur([3, 5], (0.1, 2.0))], p=0.3),  # 1  47.6
             T.RandomApply([T.GaussianBlur([3, 5], (0.1, 2.0))], p=0.3),  # 1 47.4
@@ -303,42 +301,14 @@ class CategoryAdaptor:
             normalize
         ])
         weak_transform = T.Compose([
-            ResizeImage(self.args.resize_size),
-            # 负面作用
+            ResizeImage(self.args.resize_size),           
             # T.RandomCrop(self.args.resize_size, padding=4),
-            T.RandomHorizontalFlip(p=0.5),
-            # 上限关键：垂直翻转
+            T.RandomHorizontalFlip(p=0.5),    
             T.RandomVerticalFlip(p=0.5),
-            # 低强度随机颜色抖动
             # T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
             T.ToTensor(),
             normalize
         ])
-        #
-        # strong_transform = T.Compose([
-        #     ResizeImage(self.args.resize_size),
-        #     # 随机颜色抖动，增强颜色变化
-        #     T.ColorJitter(brightness=0.7, contrast=0.7, saturation=0.7, hue=0.5),
-        #     # 随机应用高斯模糊，模拟不同焦距
-        #     # T.RandomApply([T.GaussianBlur([3, 5], (0.1, 2.0))], p=0.7), # 3
-        #     # T.RandomApply([T.GaussianBlur([3, 5], (0.1, 2.0))], p=0.3),  # 1  47.6
-        #     T.RandomApply([T.GaussianBlur([3, 5], (0.1, 2.0))], p=0.3),  # 1 47.4
-        #     T.RandomGrayscale(0.1),
-        #     T.ToTensor(),
-        #     normalize
-        # ])
-        # weak_transform = T.Compose([
-        #     ResizeImage(self.args.resize_size),
-        #     # 负面作用
-        #     # T.RandomCrop(self.args.resize_size, padding=4),
-        #     T.RandomHorizontalFlip(p=0.5),
-        #     # 上限关键：垂直翻转
-        #     T.RandomVerticalFlip(p=0.5),
-        #     # 低强度随机颜色抖动
-        #     T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-        #     T.ToTensor(),
-        #     normalize
-        # ])
         if not labeled:
             dataset = ProposalDataset(filtered_proposals_list, weak_transform)
         else:
