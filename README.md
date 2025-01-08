@@ -32,6 +32,8 @@ CUDA_VISIBLE_DEVICES=0 python d_adapt.py  \
   --eval-only --finetune --bbox-refine  \
   OUTPUT_DIR logs/faster_rcnn_R_101_C4/voc2clipart/eval2 \
   MODEL.WEIGHTS ${pretrained_models} SEED 0
+
+
 # Source_only Stage
 CUDA_VISIBLE_DEVICES=0 python source_only.py \
   --config-file config/faster_rcnn_R_101_C4_voc.yaml \
