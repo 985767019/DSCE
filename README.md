@@ -21,9 +21,9 @@ address this, we applied data augmentation with varying intensities before the c
 
 The following command trains a Faster-RCNN detector on task VOC->Clipart, with only source (VOC) data.
 ```
-# eval （Test commands）
-# pretrained_models （The path to the pre-training file）
-# OUTPUT_DIR  （The path where the log file is saved）
+# eval --- Test commands
+# pretrained_models --- The path to the pre-training file
+# OUTPUT_DIR  ---- The path where the log file is saved
 pretrained_models=logs/faster_rcnn_R_101_C4/voc2clipart/phase3_sw_dsce/model_final.pth
 CUDA_VISIBLE_DEVICES=0 python d_adapt.py  \
   --config-file config/faster_rcnn_R_101_C4_voc.yaml \
